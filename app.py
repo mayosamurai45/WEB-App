@@ -5,42 +5,44 @@ from flask_jwt_extended import JWTManager, jwt_required, create_access_token
 from werkzeug.security import generate_password_hash, check_password_hash
 from uuid import uuid4
 
-# Initialize Flask app
+
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite3'
 app.config['SECRET_KEY'] = 'super-secret-key'
 app.config['JWT_SECRET_KEY'] = 'jwt-secret-key'
+app.config['SECURITY_PASSWORD_SALT'] = 'general_Zhang_Zongchang'
 
-# Initialize extensions
+
+
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
 
-# --- MODELS ---
-# Association table for roles and users
+
+
 roles_users = db.Table('roles_users',
     db.Column('user_id', db.Integer, db.ForeignKey('user.id')),
     db.Column('role_id', db.Integer, db.ForeignKey('role.id'))
 )
 
-# Category Model
+
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True, nullable=False)
     items = db.relationship('Item', backref='category', lazy=True)
 
-# Item Model
+
 class Item(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), nullable=False)
     description = db.Column(db.String(200))
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'))
 
-# Role Model
+
 class Role(db.Model, RoleMixin):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True)
 
-# User Model
+
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(255), unique=True, nullable=False)
@@ -54,28 +56,27 @@ class User(db.Model, UserMixin):
         if not self.fs_uniquifier:
             self.fs_uniquifier = str(uuid4())
 
-# Setup Flask-Security
+
 user_datastore = SQLAlchemyUserDatastore(db, User, Role)
 security = Security(app, user_datastore)
 
-# --- INITIALIZE DATABASE ---
+
 with app.app_context():
     db.create_all()
-    # Create default user if not exists
+    
     if not User.query.filter_by(email='admin@example.com').first():
-        hashed_password = generate_password_hash('password')  # Hash the password
+        hashed_password = generate_password_hash('password')  
         user_datastore.create_user(email='admin@example.com', password=hashed_password)
         db.session.commit()
 
-# --- ROUTES ---
-# Home Route: Show items and categories
+
 @app.route('/')
 def index():
     categories = Category.query.all()
     items = Item.query.all()
     return render_template('index.html', categories=categories, items=items)
 
-# CRUD for Categories
+
 @app.route('/categories', methods=['POST'])
 @login_required
 def create_category():
@@ -93,7 +94,7 @@ def delete_category(id):
     db.session.commit()
     return jsonify({'message': 'Category deleted'})
 
-# CRUD for Items
+
 @app.route('/items', methods=['POST'])
 @login_required
 def create_item():
@@ -122,7 +123,7 @@ def delete_item(id):
     db.session.commit()
     return redirect(url_for('index'))
 
-# --- AUTHENTICATION FOR JWT ---
+
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
@@ -132,6 +133,6 @@ def login():
         return jsonify({'token': token})
     return jsonify({'message': 'Invalid credentials'}), 401
 
-# Run the app
+
 if __name__ == '__main__':
     app.run(debug=True)
