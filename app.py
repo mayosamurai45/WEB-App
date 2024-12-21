@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_security import Security, SQLAlchemyUserDatastore, UserMixin, RoleMixin, login_required
 from flask_jwt_extended import JWTManager, jwt_required, create_access_token
@@ -7,31 +7,26 @@ from uuid import uuid4
 from flask_bcrypt import Bcrypt
 from flask_wtf.csrf import CSRFProtect
 
-
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite3'
 app.config['SECRET_KEY'] = 'super-secret-key'
 app.config['JWT_SECRET_KEY'] = 'jwt-secret-key'
 app.config['SECURITY_PASSWORD_SALT'] = 'your_salt_here'
 
-
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
 bcrypt = Bcrypt(app)
 csrf = CSRFProtect(app)
-
 
 roles_users = db.Table('roles_users',
     db.Column('user_id', db.Integer, db.ForeignKey('user.id')),
     db.Column('role_id', db.Integer, db.ForeignKey('role.id'))
 )
 
-
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True, nullable=False)
     items = db.relationship('Item', backref='category', lazy=True)
-
 
 class Item(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -39,11 +34,9 @@ class Item(db.Model):
     description = db.Column(db.String(200))
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'))
 
-
 class Role(db.Model, RoleMixin):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True)
-
 
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
@@ -58,23 +51,15 @@ class User(db.Model, UserMixin):
         if not self.fs_uniquifier:
             self.fs_uniquifier = str(uuid4())
 
-
 user_datastore = SQLAlchemyUserDatastore(db, User, Role)
 security = Security(app, user_datastore)
 
-
 with app.app_context():
     db.create_all()
-
     if not User.query.filter_by(email='admin@example.com').first():
         hashed_password = bcrypt.generate_password_hash('password').decode('utf-8')
         user_datastore.create_user(email='admin@example.com', password=hashed_password)
         db.session.commit()
-
-
-password = "password"
-hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
-print(hashed_password)
 
 
 @app.route('/')
@@ -87,40 +72,60 @@ def index():
 @app.route('/categories', methods=['POST'])
 @login_required
 def create_category():
-    data = request.form
-    new_category = Category(name=data['name'])
+    name = request.form['name']
+    new_category = Category(name=name)
     db.session.add(new_category)
     db.session.commit()
+    flash('Category added successfully!')
     return redirect(url_for('index'))
 
-@app.route('/categories/<int:id>', methods=['DELETE'])
+
+@app.route('/categories/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_category(id):
+    category = Category.query.get_or_404(id)
+    if request.method == 'POST':
+        category.name = request.form['name']
+        db.session.commit()
+        flash('Category updated successfully!')
+        return redirect(url_for('index'))
+    return render_template('edit_category.html', category=category)
+
+
+@app.route('/categories/<int:id>/delete', methods=['POST'])
 @login_required
 def delete_category(id):
     category = Category.query.get_or_404(id)
     db.session.delete(category)
     db.session.commit()
-    return jsonify({'message': 'Category deleted'})
+    flash('Category deleted successfully!')
+    return redirect(url_for('index'))
 
 
 @app.route('/items', methods=['POST'])
 @login_required
 def create_item():
-    data = request.form
-    new_item = Item(name=data['name'], description=data['description'], category_id=data['category_id'])
+    name = request.form['name']
+    description = request.form['description']
+    category_id = request.form['category_id']
+    new_item = Item(name=name, description=description, category_id=category_id)
     db.session.add(new_item)
     db.session.commit()
+    flash('Item added successfully!')
     return redirect(url_for('index'))
+
 
 @app.route('/items/<int:id>/edit', methods=['POST'])
 @login_required
 def update_item(id):
-    data = request.form
     item = Item.query.get_or_404(id)
-    item.name = data['name']
-    item.description = data['description']
-    item.category_id = data['category_id']
+    item.name = request.form['name']
+    item.description = request.form['description']
+    item.category_id = request.form['category_id']
     db.session.commit()
+    flash('Item updated successfully!')
     return redirect(url_for('index'))
+
 
 @app.route('/items/<int:id>/delete', methods=['POST'])
 @login_required
@@ -128,6 +133,7 @@ def delete_item(id):
     item = Item.query.get_or_404(id)
     db.session.delete(item)
     db.session.commit()
+    flash('Item deleted successfully!')
     return redirect(url_for('index'))
 
 
@@ -140,7 +146,6 @@ def login():
         token = create_access_token(identity=user.id)
         return jsonify({'token': token})
     return jsonify({'message': 'Invalid credentials'}), 401
-
 
 if __name__ == '__main__':
     app.run(debug=True)
