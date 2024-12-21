@@ -4,19 +4,21 @@ from flask_security import Security, SQLAlchemyUserDatastore, UserMixin, RoleMix
 from flask_jwt_extended import JWTManager, jwt_required, create_access_token
 from werkzeug.security import generate_password_hash, check_password_hash
 from uuid import uuid4
+from flask_bcrypt import Bcrypt
+from flask_wtf.csrf import CSRFProtect
 
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite3'
 app.config['SECRET_KEY'] = 'super-secret-key'
 app.config['JWT_SECRET_KEY'] = 'jwt-secret-key'
-app.config['SECURITY_PASSWORD_SALT'] = 'general_Zhang_Zongchang'
-
+app.config['SECURITY_PASSWORD_SALT'] = 'your_salt_here'
 
 
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
-
+bcrypt = Bcrypt(app)
+csrf = CSRFProtect(app)
 
 
 roles_users = db.Table('roles_users',
@@ -63,11 +65,16 @@ security = Security(app, user_datastore)
 
 with app.app_context():
     db.create_all()
-    
+
     if not User.query.filter_by(email='admin@example.com').first():
-        hashed_password = generate_password_hash('password')  
+        hashed_password = bcrypt.generate_password_hash('password').decode('utf-8')
         user_datastore.create_user(email='admin@example.com', password=hashed_password)
         db.session.commit()
+
+
+password = "password"
+hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+print(hashed_password)
 
 
 @app.route('/')
@@ -125,10 +132,11 @@ def delete_item(id):
 
 
 @app.route('/login', methods=['POST'])
+@csrf.exempt
 def login():
     data = request.json
     user = User.query.filter_by(email=data['email']).first()
-    if user and check_password_hash(user.password, data['password']):
+    if user and bcrypt.check_password_hash(user.password, data['password']):
         token = create_access_token(identity=user.id)
         return jsonify({'token': token})
     return jsonify({'message': 'Invalid credentials'}), 401
